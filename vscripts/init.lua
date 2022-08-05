@@ -1,3 +1,7 @@
+if __basis_loaded then
+	return __basis_loaded
+end
+
 local basis = {
 	loaded = {},
 }
@@ -16,6 +20,40 @@ function basis.require(module, target, _optional)
 	end
 
 	local f, err = loadfile(path)
+	
+	if err then
+		if not _optional then
+			error(err, 2)
+		end
+		return
+	end
+
+	local env = {
+		require = basis.require,
+		_M = {},
+	}
+	setmetatable(env, {
+		__index = function(s, k)
+			return rawget(env._M, k) or _G[k]
+		end,
+		__newindex = env._M,
+	})
+	
+	setfenv(f, env)
+	local mod = f()
+
+	if mod == nil then
+		mod = env._M
+	end
+
+	if target then
+		for k, v in pairs(mod) do
+			target[k] = v
+		end
+	end
+
+	return mod
 end
 
+__basis_loaded = basis
 return basis
