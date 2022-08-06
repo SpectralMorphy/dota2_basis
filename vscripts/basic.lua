@@ -8,6 +8,8 @@
 
 local _M = _M or _G
 
+print('basis basic version: 1')
+
 --[[
 
 # ETYPE SECTION
@@ -1318,13 +1320,28 @@ end
 
 --[[
 
+lprint(string)
+
+Print string by lines. Basicly fixes default print's clamp of long multiline strings.
+
+]]
+
+function lprint(s)
+	foreach(
+		split(s, '\n'),
+		wrap(print, '#1')
+	)
+end
+
+--[[
+
 # dprint(object: any, options?: map): string?
 
 Deep print the given object.
 May print cyclic structures as well.
 
 options: {
-	print: f(string) | false = print,			-- function to display resulting string. Is set to false, resulting string will be returned.
+	print: f(string) | false = lprint,			-- function to display resulting string. Is set to false, resulting string will be returned.
 	expand: f(object: any, options) = istable,	-- function to determine whether passed object should be deep printed.
 	iterator: iterator = iorder(true, lt),		-- Iterator to define fields to print and their order.
 	keys: boolean = true,						-- Should keys be deep printed?
@@ -1400,7 +1417,7 @@ end
 local function __dprint(object, options, meta)
 	options = options or {}
 	local t = {
-		print = fd(options.print, print),
+		print = fd(options.print, lprint),
 		expand = options.expand or istable,
 		keys = fd(options.keys, true),
 		iterator = options.iterator or iorder(true, lt),
