@@ -911,7 +911,7 @@ function unpackfull(values, iterator)
 		return unpackfull(vals(values, iterator))
 	end
 
-	local max = __unpackfull_max or extr(keys(values))
+	local max = __unpackfull_max or extr(keys(values)) or 0
 	local i = __unpackfull_i or 1
 	if max < i then
 		__unpackfull_max = nil
@@ -1299,7 +1299,7 @@ Default 'last' key is the maximum numeric key in the source table.
 function istep(v, first, last, step)
 	local iterator = function(t)
 		local index = first or 1
-		local last = last or extr(keys(t))
+		local last = last or extr(keys(t)) or 0
 		local step = step or 1
 		
 		return function()
@@ -1420,6 +1420,7 @@ local function __dprint(object, options, meta)
 		print = fd(options.print, lprint),
 		expand = options.expand or istable,
 		keys = fd(options.keys, true),
+		meta = fd(options.meta, false),
 		iterator = options.iterator or iorder(true, lt),
 		format = __dprint_parseformat(options.format),
 	}
