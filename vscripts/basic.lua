@@ -8,8 +8,6 @@
 
 local _M = _M or _G
 
-print('basis basic version: 1')
-
 --[[
 
 # ETYPE SECTION
@@ -489,6 +487,7 @@ There may be multiple conditions separated by vertical line "|". They will be tr
 
 Default may be any expression, which must be valid in the current context.
 Expression may refer previous output parameters, using the form: #param_number. (First param number is 1)
+To prevent '#' replacement inside the inner strings, use '%#' instead.
 
 Last template may be a "..."
 In this case all remaining unused params will be returned in their order after the parsed params.
@@ -538,7 +537,7 @@ function args(format, ...)
 	end
 
 	local function parse_default(default)
-		default = default:gsub('(#%d+)', 'getfenv(1)["%1"]')
+		default = (' ' .. default):gsub('([^%%])(#%d+)', '%1getfenv(1)["%2"]'):gsub('%%#', '#')
 		return runstring(default, env, 2)
 	end
 
@@ -585,6 +584,7 @@ end
 Generates new parameter list using the given parameter list, according to the given format.
 Format is a string of comma-separated expressions, which will be executed in the current context, and result will be returned. (Only used upvalues are visible)
 Expression may refer any passed parameter using the format: #param_number. (First param number is 1)
+To prevent '#' replacement inside the inner strings, use '%#' instead.
 Expression also may be a '...', which will put all the passed parameters in appropriate position between returned values.
 Optional first parameter may be a number, which represents a stack level of the execution contex.
 First parameter also may be a table, then it will be used as context itself.
@@ -631,7 +631,7 @@ function reargs(env, format, ...)
 		istep
 	))
 
-	format = format:gsub('%.%.%.', varargs):gsub('(#%d+)', 'getfenv(1)["%1"]')
+	format = (' ' .. format):gsub('%.%.%.', varargs):gsub('([^%%])(#%d+)', '%1getfenv(1)["%2"]'):gsub('%%#', '#')
 
 	return runstring(format, env)
 end
@@ -744,6 +744,7 @@ Returns wrapper for the given function.
 When calling a wrapper, puts parameters into the source function according to the inform.
 Returns results of the source function according to the 'outform'.
 'inform' and 'outform' work same as 'format' for the 'reargs' function.
+'outform' also may refer input wrapper's params with form: ##param_number
 If function is not specified, wrapper will just return parsed parameters.
 
 EXAMPLE
@@ -753,9 +754,10 @@ function summ(a, b)
 end
 local x = 10
 
-add_x_then_double = wrap(summ, '#1, x', '#1 * 2, ...')
+add_x_then_double_then_addsrc = wrap(summ, '#1, x', '#1 * 2 + ##1, ...')
 
-print(add_x_then_double(7))		--> 34    17
+print(add_x_then_double_then_addsrc(7))		--> 41    17
+-- 41 = (7 + x) * 2 + 7
 ```
 
 ]]
@@ -765,9 +767,13 @@ function wrap(f, inform, outform)
 		local env = envcopy(2)
 		inform = inform or '...'
 		outform = outform or '...'
+		outform = (' ' .. outform):gsub('##(%d+)', 'getfenv(1)["%%#%%#%1"]')
 		f = f or wrap()
 
 		return function(...)
+			for i, v in pairs({...}) do
+				env['##'..i] = v
+			end
 			return reargs(env, outform, f(reargs(env, inform, ...)))
 		end
 	else
@@ -1342,7 +1348,7 @@ May print cyclic structures as well.
 
 options: {
 	print: f(string) | false = lprint,			-- function to display resulting string. Is set to false, resulting string will be returned.
-	expand: f(object: any, options) = istable,	-- function to determine whether passed object should be deep printed.
+	expand: f(object: any, key: any, options) = istable,	-- function to determine whether passed object should be deep printed.
 	iterator: iterator = iorder(true, lt),		-- Iterator to define fields to print and their order.
 	keys: boolean = true,						-- Should keys be deep printed?
 	meta: boolean = false,						-- Should metatable's __index be printed?
@@ -1351,7 +1357,7 @@ options: {
 }
 
 format: {
-	tostring?: f(object: any, options): string,	-- String-cast function for printing objects. By default uses stringify function to print basic objects, and doesn't print expanded ones.
+	tostring?: f(object: any, key: any, options): string,	-- String-cast function for printing objects. By default uses stringify function to print basic objects, and doesn't print expanded ones.
 	separator: string = ','			-- Separator between KV pairs.
 	keyleft: string = '['			-- Prefix for keys.
 	keyright: string = '] = '		-- Postfix for keys.
@@ -1373,8 +1379,8 @@ Predefined dprint formats:
 dprint = {
 	format = {
 		simple = {
-			tostring = function(v, options)
-				return options.expand(v) and '' or stringify(v)
+			tostring = function(v, k, options)
+				return options.expand(v, k, options) and '' or stringify(v)
 			end,
 			separator = ',',
 			keyleft = '[',
@@ -1434,9 +1440,9 @@ local function __dprint(object, options, meta)
 	local prefix = meta.prefix or ''
 	local closestring = t.format.mapright:len() > 0
 
-	output = output .. t.tostring(object, t)
+	output = output .. t.tostring(object, meta.key, t)
 
-	if (t.keys or not meta.key) and t.expand(object) then
+	if (t.keys or not meta.iskey) and t.expand(object, meta.key, t) then
 		if meta.printed[object] then
 			output = output .. t.format.mapskip
 		else
@@ -1478,7 +1484,7 @@ local function __dprint(object, options, meta)
 						local skey = e[1] == indexkey and '__index' or __dprint(e[1], options, {
 							printed = meta.printed,
 							prefix = prefix .. childpostfix,
-							key = true,
+							iskey = true,
 						})
 						
 						printkv(
@@ -1486,6 +1492,7 @@ local function __dprint(object, options, meta)
 							__dprint(e[2], options, {
 								printed = meta.printed,
 								prefix = prefix .. childpostfix,
+								key = e[1],
 							}),
 							last
 						)
@@ -1493,7 +1500,7 @@ local function __dprint(object, options, meta)
 				)
 			end
 
-			if (closestring and haschild) or (not closestring and meta.key) then
+			if (closestring and haschild) or (not closestring and meta.iskey) then
 				output = output .. '\n' .. prefix
 			end
 			output = output .. t.format.mapright
