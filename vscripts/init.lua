@@ -4,6 +4,7 @@ end
 
 local http
 local settings = LoadKeyValues('basis.kv')
+local setup_callbacks = {}
 
 local basis = {
 	loaded = {},
@@ -19,9 +20,23 @@ local basis = {
 	}
 }
 
+if IsServer() then
+	ListenToGameEvent(
+		'game_rules_state_change',
+		function()
+			if GameRules:State_Get() == DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
+				for _, f in ipairs(setup_callbacks) do
+					f()
+				end
+			end
+		end,
+		nil
+	)	
+end
+
 local function check_required()
 	local ok = true
-	for _, state in pairs(basis.required) do
+	for module, state in pairs(basis.required) do
 		if state == basis.REQUIRE_STATE.LOADING then
 			return
 		elseif state == basis.REQUIRE_STATE.ERROR then
@@ -92,16 +107,25 @@ function basis.require(module, target)
 	if not err or (err and not http) then
 		onrequire(f, err)
 	else
-		local url = basis.vscripts_url .. path .. '.lua'
-		http.require_url(
-			url,
-			__optional_require,
-			function(f, err)
-				onrequire(f, err)
-			end
-		)
+		local function loadhttp()
+			local url = basis.vscripts_url .. module .. '.lua'
+			http.require_url(
+				url,
+				__optional_require,
+				function(f, err)
+					onrequire(f, err)
+				end
+			)
+		end
+
+		if IsServer() and (not GameRules or GameRules:State_Get() < DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP) then
+			table.insert(setup_callbacks, loadhttp)
+		else
+			loadhttp()
+		end
 	end
 
+	basis.loaded[module] = mod
 	return mod
 end
 
@@ -115,6 +139,14 @@ end
 function basis.onrequied(callback)
 	table.insert(basis.onrequire_callbacks, callback)
 	check_required()
+end
+
+function basis.setup()
+	
+end
+
+function basis.endsetup()
+
 end
 
 http = basis.optional('http')

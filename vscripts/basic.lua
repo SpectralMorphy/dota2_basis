@@ -340,6 +340,38 @@ end
 
 --[[
 
+# ocall(function: f() | nil, params: ...any): result: any
+
+Calls the given function if it's not nil with the given params.
+
+]]
+
+function ocall(f, ...)
+	if f then
+		return f(...)
+	end
+end
+
+--[[
+
+# oscall(object: table | nil, function: string, params: ...any)
+
+Optionally calls function of the given object by name, using object itself as first parameter.
+Calls only if both object and function are not nils.
+
+]]
+
+function oscall(obj, fname, ...)
+	if obj then
+		local f = obj[fname]
+		if f then
+			return f(obj, ...)
+		end
+	end
+end
+
+--[[
+
 # use(...any)
 
 Define upvalues for usage. Affects some context dependent functions.
@@ -1006,6 +1038,16 @@ end
 
 --[[
 
+# 
+
+]]
+
+function reduce()
+	
+end
+
+--[[
+
 # inverse(source: object, iterator = epairs): map
 
 Generate new table, using values of the source table as keys and keys as values.
@@ -1168,6 +1210,41 @@ function entries(t, iterator)
 		iterator
 	)
 	return a
+end
+
+--[[
+
+# random(source: table, weighted?: boolean = false, iterator = epairs): any, any
+
+Get random element from the given table. Returns value and key.
+If 'weighted' is true, values will be considered as weights, and only key will be returned. Ignores not-numeric values.
+Iterator may be provided to limit fields.
+]]
+
+function random(t, weighted, iterator)
+	if type(weighted) ~= 'boolean' then
+		iterator = weighted
+		weighted = false
+	end
+
+	local arr = entries(t, iterator)
+	if weighted then
+		local max = 0
+		local weights = {}
+		for i, e in ipairs(arr) do
+			weights[i] = max
+			max = max + tonumber(e[2])
+		end
+		local weight = RandomFloat(0, max)
+		for i, w in ipairs(weights) do
+			if weight >= w then
+				return arr[i][1]
+			end
+		end
+	else
+		local e = arr[RandomInt(1, #arr)]
+		return e[2], e[1]
+	end
 end
 
 --[[
