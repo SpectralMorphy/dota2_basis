@@ -1,27 +1,51 @@
+
 --[[
 
 • May be required directly with lua's 'require', but only once!
 
 ]]
 
-function create_request(http)
+--[[
+
+parse_http(httpdata)
+
+]]
+
+function parse_http(http)
+	local parsed
+
 	if type(http) == 'string' then
-		http = {url = http}
+		parsed = {url = http}
 	else
-		http = {url = http.url}
+		parsed = {url = http.url}
 	end
 
-	http.met = http.met or 'GET'
-	http.headers = http.headers or {}
-	http.params = http.params or {}
+	if not parsed.url:match('^http') then
+		parsed.url = 'http://' .. parsed.url
+	end
 
+	parsed.met = http.met or 'GET'
+	parsed.headers = http.headers or {}
+	parsed.params = http.params or {}
+
+	return parsed
+end
+
+--[[
+
+create_request(httpdata)
+
+]]
+
+function create_request(http)
+	http = parse_http(http)
 	local req = CreateHTTPRequestScriptVM(http.met, http.url)
 
 	for k, v in pairs(http.headers) do
 		req:SetHTTPRequestHeaderValue(k, v)
 	end
 
-	for k, v in pairs(http.headers) do
+	for k, v in pairs(http.params) do
 		req:SetHTTPRequestGetOrPostParameter(k, v)
 	end
 
@@ -30,7 +54,7 @@ end
 
 --[[
 
-read_url(httpdata, callback: f(body: string, response: map, parsed: httpdata), fail?: f(body: string, response: map, parsed: httpdata))
+read_url(httpdata, callback: f(body: string, response: map, parsed: httpdata), fail: nil | f(body: string, response: map, parsed: httpdata), tries: int = 3)
 
 ]]
 
@@ -50,14 +74,20 @@ if IsServer() then
 	)	
 end
 
-function read_url(http, ok, fail)
+function read_url(http, ok, fail, tries)
+	tries = tries or 3
+
 	local function run()
 		local req, http = create_request(http)
 		req:Send(function(t)
 			if t.StatusCode == 200 then
 				ok(t.Body, t, http)
 			elseif fail then
-				fail(t.Body, t, http)
+				if tries > 1 then
+					read_url(http, ok, fail, tries - 1)
+				else
+					fail(t.Body, t, http)
+				end
 			end
 		end)
 	end
@@ -71,11 +101,12 @@ end
 
 --[[
 
-require_url(httpdata, optional: boolean = false, callback?: f(module: f(), err: string))
+require_url(httpdata, optional?: boolean = false, module?: string, callback?: f(module: f(), err: string))
 
 ]]
 
 local required = {}
+local required_modules = {}
 local on_required_callbacks = {}
 
 local function check_url_required()
@@ -87,58 +118,113 @@ local function check_url_required()
 			ok = false
 		end
 	end
-	for _, f in ipairs(on_required_callbacks) do
+	local callbacks = {unpack(on_required_callbacks)}
+	on_required_callbacks = {}
+	for _, f in ipairs(callbacks) do
 		f(ok)
 	end
 end
 
-function require_url(http, optional, callback)
-	local function ferr(err)
-		if callback then
-			callback(nil, err)
+function require_url(http, optional, module, callback)
+	if type(optional) ~= 'boolean' then
+		callback = module
+		module = optional
+		optional = false
+	end
+	if type(module) ~= 'string' then
+		callback = module
+		module = nil
+	end
+
+	local promise
+
+	if module then
+		if required_modules[module] then
+			return required_modules[module]
 		else
-			(optional and print or error)(err)
+			promise = {}
+			required_modules[module] = promise
 		end
 	end
 
+	http = parse_http(http)
 	local errstate = optional and 'fail' or 'error'
 	local info = {
 		state = 'loading',
+		http = http,
 	}
+	table.insert(required, info)
+
+	local function ferr(err)
+		info.state = errstate
+		if callback then
+			check_url_required()
+			callback(nil, err)
+		else
+			check_url_required();
+			(optional and print or error)(err)
+		end
+	end
 	
 	read_url(
 		http,
-		function(code, _, http)
-			info.http = http
+		function(code)
 			local f, err = load(code)
 			if err then
-				info.state = errstate
 				print('Failed to require ' .. http.url)
 				ferr(err)
 			else
-				info.state = 'done'
 				if callback then
-					callback(f, nil)
+					callback(f, nil, promise)
 				else
-					f()
+					local status, result = pcall(f)
+					if status then
+						if type(result) == 'table' then
+							for k, v in pairs(result) do
+								promise[k] = v
+							end
+						end
+					else
+						print('Failed to execute ' .. http.url)
+						ferr(result)
+						return
+					end
 				end
+				info.state = 'done'
+				check_url_required()
 			end
 		end,
-		function(_, _, http)
-			info.http = http
-			info.state = errstate
+		function()
 			ferr('Cannot find ' .. http.url)
 		end
 	)
+
+	return promise
 end
 
 --[[
 
-on_all_url_required(callback: f(errors: boolean))
+on_all_url_required(callback: f(success: boolean))
 
 ]]
 
 function on_all_url_required(f)
 	table.insert(on_required_callbacks, f)
 	check_url_required()
+end
+
+--[[
+
+require_error_https()
+
+]]
+
+function require_error_https()
+	local t = {}
+	for _, info in ipairs(required) do
+		if info.state == 'error' then
+			table.insert(t, info.http)
+		end
+	end
+	return t
 end
