@@ -8,7 +8,7 @@ function getplayers(t)
 	local players = {}
 	for pid = 0, DOTA_MAX_PLAYERS - 1 do
 		if PlayerResource:IsValidPlayer(pid) then
-			if t.spectators or not PlayerResource:IsBroadcaster(i) then
+			if t.spectators or not PlayerResource:IsBroadcaster(pid) then
 				table.insert(players, pid)
 			end
 		end
