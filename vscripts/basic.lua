@@ -982,10 +982,11 @@ end
 
 --[[
 
-# map(source: object, modify: f(value: any, key: any, source: object, order: int): any = wrap(), iterator = epairs, others: boolean = false): map
+# map(source: object, modify: f(value: any, key: any, source: object, order: int): any, any = wrap(), iterator = epairs, others: boolean = false): map
 
 Form new table by mapping values of the source table with the 'modify' function.
-If 'modify' function is not specified, shallow copy of the table will be returned. 
+'modify' may return a second result, then the key will be mapped to this value.
+If 'modify' function is not specified, shallow copy of the table will be returned.
 Iterator may be provided to limit fields and determine order for the mapping.
 The 'others' param determines if fields outside the iterator should be included.
 
@@ -998,7 +999,9 @@ function map(source, modify, iterator, others)
 	foreach(
 		source,
 		function(v, k, t, i)
-			newer[k] = modify(v, k, t, i)
+			local newv, newk = modify(v, k, t, i)
+			newk = fd(newk, k)
+			newer[newk] = newv
 			iterated[k] = true
 		end,
 		iterator
@@ -1313,7 +1316,7 @@ end
 
 --[[
 
-# iorder(source: table | true, compare: boolean | f(a: any, b: any): boolean = true, condition: f(value: any, key: any, keys: array, order: int): boolean = f(): true): iterator | iterator()
+# iorder(source: table | true, compare: boolean | f(a: any, b: any): boolean = true, condition: f(value: any, key: any, source: table, order: int): boolean = f(): true): iterator | iterator()
 
 Iterator over the source table, which iterates specified keys in specified order.
 Provides values inside the iteration (as second parameter).

@@ -289,6 +289,10 @@
 		lerror.html = true
 		basic.applyCSS(root, setupCSS)
 
+		lload.SetAttributeString('multiline', 'true')
+		$.Msg(lload.GetAttributeString('multiline', 'cyka'))
+		lload.text += '\nIDI NAXYI'
+
 		GameEvents.Subscribe('cl_basis_setup', t => {
 			let issetuping = t.setuping ? true : false
 			if(setup.setuping != issetuping){
