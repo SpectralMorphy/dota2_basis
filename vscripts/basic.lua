@@ -982,7 +982,7 @@ end
 
 --[[
 
-# map(source: object, modify: f(value: any, key: any, source: object, order: int): any, any = wrap(), iterator = epairs, others: boolean = false): map
+# map(source: object, modify: f(value: any, key: any, source: object, order: int, new: object): any, any = wrap(), iterator = epairs, others: boolean = false): map
 
 Form new table by mapping values of the source table with the 'modify' function.
 'modify' may return a second result, then the key will be mapped to this value.
@@ -999,7 +999,7 @@ function map(source, modify, iterator, others)
 	foreach(
 		source,
 		function(v, k, t, i)
-			local newv, newk = modify(v, k, t, i)
+			local newv, newk = modify(v, k, t, i, newer)
 			if newk == nil then
 				newk = k
 			end
