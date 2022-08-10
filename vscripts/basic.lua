@@ -1000,7 +1000,9 @@ function map(source, modify, iterator, others)
 		source,
 		function(v, k, t, i)
 			local newv, newk = modify(v, k, t, i)
-			newk = fd(newk, k)
+			if newk == nil then
+				newk = k
+			end
 			newer[newk] = newv
 			iterated[k] = true
 		end,
