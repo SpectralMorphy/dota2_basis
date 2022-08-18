@@ -1,4 +1,5 @@
 if __basis_loaded then
+	__basis_loaded.reload = true
 	return __basis_loaded
 end
 
@@ -7,36 +8,12 @@ local settings = LoadKeyValues('basis.kv')
 
 local basis = {
 	loaded = {},
+	reload = false,
 	setuping = false,
 	setuped = false,
 	vscripts_root = settings.vscripts_root or '',
 	vscripts_url = 'https://raw.githubusercontent.com/SpectralMorphy/dota2_basis/main/vscripts/',
 }
-
-local require_queue = {}
-local require_queue_i = 1
-local require_queue_e = 1
-local function queue_push()
-	local data = {}
-	local invoke = function(callback)
-		data.callback = callback
-		if require_queue[require_queue_i] == data then
-			local idata = data
-			while idata and idata.callback do
-				idata.callback()
-				require_queue[require_queue_i] = nil
-				require_queue_i = require_queue_i + 1
-				idata = require_queue[require_queue_i]
-			end
-		end
-	end
-	data.invoke = invoke
-	require_queue[require_queue_e] = data
-	require_queue_e = require_queue_e + 1
-	return invoke
-end
-
--- local 
 
 local __optional_require = false
 function basis.require(module, target)
@@ -99,24 +76,24 @@ function basis.require(module, target)
 			path = basis.vscripts_root .. '/' .. path
 		end
 
-		local invoke = queue_push()
-
 		local f, err = loadfile(path)
-		if not err or (err and not http) then
-			invoke(function()
-				onrequire(f, err)
-			end)
-		else
-			local url = basis.vscripts_url .. module .. '.lua'
-			http.require_url(
-				url,
-				__optional_require,
-				function(f, err)
-					invoke(function()
+		if http then
+			if not err then
+				http.http_queue('require', function()
+					onrequire(f, err)
+				end)()
+			else
+				local url = basis.vscripts_url .. module .. '.lua'
+				http.require_url(
+					url,
+					__optional_require,
+					function(f, err)
 						onrequire(f, err)
-					end)
-				end
-			)
+					end
+				)
+			end
+		else
+			onrequire(f, err)
 		end
 	end
 

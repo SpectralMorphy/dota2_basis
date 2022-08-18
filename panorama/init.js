@@ -19,6 +19,7 @@
 
 	let _state
 	let onStateCallbacks = {}
+	let __merge_ignore = undefined
 
 	let basic = {
 		fd: (...args) => {
@@ -51,22 +52,56 @@
 			}
 		},
 
-		loc: (key, def) => {
-			let str = $.Localize(key)
-			if(key == str){
-				return def || ''
-			}
-			return str
+		stringify: x => {
+			return typeof(x) == 'string' ? `"${x}"` : x.toString()
 		},
 
 		backward: (a, callback) => {
 			a.slice().reverse().forEach(callback)
 		},
 
-		doDbgPrint: false,
+		merge: (left, right, ...others) => {
+			let result
+			let topcall = (__merge_ignore == undefined)
+			if(topcall) {
+				__merge_ignore = new Map()
+			}
 
-		dbgPrint: (msg) => {
-			if(basic.doDbgPrint) $.Msg(msg)
+			if(right == undefined){
+				result = left
+			} else if(typeof(right) != 'object'){
+				result = basic.merge(right, ...others)
+			} else if(typeof(left) != 'object'){
+				result = basic.merge({}, right, ...others)
+			} else {
+				__merge_ignore.set(left, left)
+				__merge_ignore.set(right, left)
+				for(let [k, v] of Object.entries(right)){
+					let leftv = left[k]
+					left[k] = __merge_ignore.get(leftv) || __merge_ignore.get(v) || basic.merge(leftv, v)
+				}
+				__merge_ignore.delete(left)
+				__merge_ignore.delete(right)
+				result = basic.merge(left, ...others)
+			}
+
+			if(topcall){
+				__merge_ignore = undefined
+			}
+
+			return result
+		},
+
+		lprint: msg => {
+			msg.split('\n').forEach(line => $.Msg(line))
+		},
+
+		loc: (key, def) => {
+			let str = $.Localize(key)
+			if(key == str){
+				return def || ''
+			}
+			return str
 		},
 
 		getHud: () => {
@@ -114,6 +149,7 @@
 			if(!panel) return
 
 			if(typeof css == 'string'){
+				css = css.replace(/\/\/.*/g, '')
 				let temps = css.match(/[^{}]+{[^{}]+?}/g)
 				css = {}
 				temps.forEach(temp => {
@@ -143,6 +179,146 @@
 			for(let [k, v] of Object.entries(style)){
 				panel.style[k] = v
 			}
+		},
+
+		parseXML: (xml, options) => {
+			options = basic.merge({
+				raw: false,
+				trim: true,
+			}, options)
+			
+			let root = []
+			let stack = [root]
+			const current = () => stack[stack.length - 1]
+
+			const parseString = s => s.replace(/&lt;/g, '<')
+				.replace(/&gt;/gi, '>')
+				.replace(/&quot;/gi, '"')
+				.replace(/&apos;/gi, "'")
+				.replace(/&amp;/gi, '&')
+				.replace(/&#(\d+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 10)))
+				.replace(/&#x(\d+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+			
+			const parseNode = () => {
+				if(!xml) return
+
+				let match = /^[^<]+/.exec(xml)
+				if(match){
+					if(options.raw){
+						let text = match[0]
+						if(options.trim) text = text.trim()
+						if(text){
+							current().push(parseString(text))
+						}
+					}
+					return match
+				}
+
+				match = /^<([\w\d\-_]+)[^\/<>]*(\/?)>/.exec(xml)
+				if(match){
+					let text = match[0]
+					let node = {
+						name: match[1],
+						attributes: {},
+						children: [],
+					}
+
+					let re = /([\w\d\-_]+)\s*=\s*"([^"]*?)"/g, pair
+					while(pair = re.exec(text)){
+						node.attributes[pair[1]] = pair[2]
+					}
+
+					current().push(node)
+					if(!match[2]){
+						stack.push(node.children)
+					}
+					return match
+				}
+
+				match = /^<\/.*?>/.exec(xml)
+				if(match){
+					stack.pop()
+					return match
+				}
+			}
+
+			let match
+			while(match = parseNode()){
+				xml = xml.slice(match.index + match[0].length)
+			}
+			
+			return root
+		},
+
+		panelEvents: {
+			onactivate: true,
+			oncancel: true,
+			oncontextmenu: true,
+			ondblclick: true,
+			ondeselect: true,
+			oneconsetloaded: true,
+			onfilled: true,
+			onfindmatchend: true,
+			onfindmatchstart: true,
+			onfocus: true,
+			onblur: true,
+			ondescendantfocus: true,
+			ondescendantblur: true,
+			oninputsubmit: true,
+			onload: true,
+			onmouseactivate: true,
+			onmouseout: true,
+			onmouseover: true,
+			onmovedown: true,
+			onmoveleft: true,
+			onmoveright: true,
+			onmoveup: true,
+			onnotfilled: true,
+			onpagesetupsuccess: true,
+			onpopupsdismissed: true,
+			onselect: true,
+			ontabforward: true,
+			ontabbackward: true,
+			ontextentrychange: true,
+			ontextentrysubmit: true,
+			onscrolledtobottom: true,
+			onscrolledtorightedge: true,
+			ontooltiploaded: true,
+			onvaluechanged: true,
+		},
+
+		createPanels: (parent, xml, callback) => {
+			if(typeof xml == 'string') xml = basic.parseXML(xml)
+			
+			let created = []
+
+			xml.forEach(node => {
+				let id = node.attributes.id; delete node.attributes.id
+				let classes = node.attributes.class; delete node.attributes.class
+
+				let panel = $.CreatePanel(node.name, parent, id || '')
+				created.push(panel)
+				
+				if(classes) classes.split(/\s+/).forEach(cls => panel.AddClass(cls))
+
+				for(let [key, val] of Object.entries(node.attributes)){
+					if(basic.panelEvents[key]){
+						if(callback){
+							panel.SetPanelEvent(key, (...a) => callback(val, ...a))
+						}
+					} else {
+						if(panel[key] != undefined){
+							panel[key] = eval(val)
+						} else {
+							panel.SetAttributeString(key, val)
+						}
+					}
+				}
+
+				basic.createPanels(panel, node.children, callback)
+			})
+
+			return created
 		},
 
 		multiline: class {			
@@ -204,6 +380,126 @@
 		},
 	}
 
+	function __dprint_parseformat(format){
+		if(typeof(format) == 'string'){
+			format = __dprint.format[format]
+		}
+		format = basic.merge({}, format)
+		format.lastspace = basic.fd(format.lastspace, format.space)
+		format.child = basic.fd(format.child, format.space)
+		format.lastchild = basic.fd(format.lastchild, format.child)
+		return basic.merge({}, __dprint.format.simple, format)
+	}
+
+	function __dprint(object, options, meta){
+		options = options || {}
+		let t = {
+			print: basic.fd(options.print, basic.lprint),
+			expand: options.expand || (o => typeof(o) == 'object'),
+			keys: basic.fd(options.keys, true),
+			format: __dprint_parseformat(options.format),
+		}
+		t.tostring = options.tostring || t.format.tostring
+	
+		meta = meta || {
+			printed: new Map(),
+		}
+	
+		let output = ''
+		let prefix = meta.prefix || ''
+		let closestring = t.format.mapright.length > 0
+	
+		output += t.tostring(object, meta.key, t)
+	
+		if((t.keys || !meta.iskey) && t.expand(object, meta.key, t)){
+			if(meta.printed.has(object)){
+				output += t.format.mapskip
+			} else {
+				meta.printed.set(object, true)
+	
+				output += t.format.mapleft
+	
+				let children = Object.entries(object)
+				let len = children.length
+				let haschild = len > 0
+	
+				function printkv(k, v, last){
+					let ownpostfix = last ? t.format.lastchild : t.format.child		
+					output += '\n' + prefix + ownpostfix + t.format.keyleft + k + t.format.keyright + v
+					if(!last){
+						output += t.format.separator
+					}
+				}
+	
+				let _options = basic.merge({}, options, {
+					print: false,
+				})
+				
+				if(haschild){
+					children.forEach((e, i) => {
+						let last = (len == i+1)
+						let childprefix = prefix + (last ? t.format.lastspace : t.format.space)
+						
+						let skey = __dprint(e[0], _options, {
+							printed: meta.printed,
+							prefix: childprefix,
+							iskey: true,
+						})
+						
+						printkv(
+							skey,
+							__dprint(e[1], _options, {
+								printed: meta.printed,
+								prefix: childprefix,
+								key: e[1],
+							}),
+							last
+						)
+					})
+				}
+	
+				if((closestring && haschild) || (!closestring && meta.iskey)){
+					output += '\n' + prefix
+				}
+				output += t.format.mapright
+			}
+		}
+	
+		if(t.print) t.print(output)
+		else return output
+	}
+
+	__dprint.format = {
+		simple: {
+			tostring: (v, k, options) => options.expand(v, k, options) ? '' : basic.stringify(v),
+			separator: ',',
+			keyleft: '[',
+			keyright: '] = ',
+			mapleft: '{',
+			mapright: '}',
+			mapskip: '{ ... }',
+			space: '  ',
+			child: '  ',
+			lastchild: '  ',
+			lastspace: '  ',
+		},
+		tree: {
+			tostring: basic.stringify,
+			separator: '',
+			keyleft: '[',
+			keyright: ']: ',
+			mapleft: '',
+			mapright: '',
+			mapskip: ' ...',
+			child: '|--',
+			space: '|  ',
+			lastchild: '*--',
+			lastspace: '   ',
+		},
+	}
+	
+	basic.dprint = __dprint
+
 	basis.exprt('basis/basic', basic)
 
 	let setup = basis.imprt('basis/setup') || {}
@@ -221,6 +517,13 @@
 	setup.setuping = undefined
 	setup.errorText = undefined
 	
+	let setupXML = `
+		<Panel id="BasisSetup">
+			<Label id="BasisLoading"/>
+			<Label id="BasisLoadingError" multiline="true" html="true"/>
+		</Panel>
+	`
+
 	let setupCSS = `
 		#BasisSetup{
 			width: 100%;
@@ -250,10 +553,9 @@
 			vertical-align: center;
 			horizontal-align: center;
 			max-height: 100%;
-			overflow: clip clip;
+			text-overflow: clip;
+			overflow: clip scroll;
 			opacity: 0;
-		}
-		#BasisLoadingError .BasisMultiline_Line{
 			font-size: 20px;
 			color: white;
 		}
@@ -282,16 +584,9 @@
 		let cuiRoot = $.GetContextPanel().GetParent()
 		let csetupRoot = cuiRoot.FindChild('CustomUIContainer_GameSetup').FindChild('CustomUIContainer')
 		if(csetupRoot) csetupRoot.style.opacity = 0
-		let root = setup.root = $.CreatePanel('Panel', cuiRoot, 'BasisSetup')
-		let lload = $.CreatePanel('Label', root, 'BasisLoading')
-		lload.text = basic.loc('ui_basis_loading', 'LOADING')
-		let lerror = new basic.multiline(root, 'BasisLoadingError')
-		lerror.html = true
-		basic.applyCSS(root, setupCSS)
-
-		lload.SetAttributeString('multiline', 'true')
-		$.Msg(lload.GetAttributeString('multiline', 'cyka'))
-		lload.text += '\nIDI NAXYI'
+		let root = setup.root = basic.createPanels(cuiRoot, setupXML)[0]
+		root.FindChild('BasisLoading').text = basic.loc('ui_basis_loading', 'LOADING')
+		let lerror = root.FindChild('BasisLoadingError')
 
 		GameEvents.Subscribe('cl_basis_setup', t => {
 			let issetuping = t.setuping ? true : false
