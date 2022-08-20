@@ -340,7 +340,30 @@ end
 
 --[[
 
-# dgos(source: any, keys: ...any, default: any): any
+# dset(target: any, keys: ...any, value: any): any
+
+Deep set a field of the given table, using consequenceive keys.
+Will override non-table filds on the path.
+
+]]
+
+function dset(target, key, val, ...)
+	local last = (#({...}) == 0)
+	if last then
+		target[key] = val
+	else
+		local new = target[key]
+		if type(new) ~= 'table' then
+			new = {}
+			target[key] = new
+		end
+		dset(new, val, ...)
+	end
+end
+
+--[[
+
+# dgos(target: any, keys: ...any, default: any): any
 
 Deep get a field of the given table, using consequenceive keys. Set it, if doesn't exist.
 Will override non-table filds on the path.
@@ -348,9 +371,8 @@ Will override non-table filds on the path.
 ]]
 
 function dgos(target, key, def, ...)
-	local arg = {...}
 	local val = target[key]
-	local last = (#arg == 0)
+	local last = (#({...}) == 0)
 	if last then
 		if val == nil then
 			val = def
@@ -362,7 +384,7 @@ function dgos(target, key, def, ...)
 			val = {}
 			target[key] = val
 		end
-		return dgos(val, def, unpack(arg))
+		return dgos(val, def, ...)
 	end
 end
 
