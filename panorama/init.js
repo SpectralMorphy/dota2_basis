@@ -17,6 +17,12 @@
 		basis.modules[module] = t
 	}
 
+	let snippetAttributes = ({
+		Label: [
+			['allowtextselection', 'false'],
+		],
+	})
+
 	let _state
 	let onStateCallbacks = {}
 	let __merge_ignore = undefined
@@ -51,6 +57,8 @@
 				f(v)
 			}
 		},
+
+		bool: x => x == 'true' ? true : x == 'false' ? false : x,
 
 		stringify: x => {
 			return typeof(x) == 'string' ? `"${x}"` : x.toString()
@@ -113,6 +121,22 @@
 		onState: (state, callback) => {
 			let callbacks = basic.dgos(onStateCallbacks, state, [])
 			callbacks.push(callback)
+		},
+
+		afterState: (state, callback) => {
+			if(Game.GameStateIsBefore(state)){
+				basic.onState(state, callback)
+			} else {
+				callback()
+			}
+		},
+
+		subscribe: (event, callback) => {
+			return GameEvents.Subscribe(event, t => {
+				if(t.event_key == basis.EVENT_KEY){
+					callback(t.event_data)
+				}
+			})
 		},
 
 		matchSelector: (panel, selector) => {
@@ -287,6 +311,22 @@
 			onvaluechanged: true,
 		},
 
+		createSnippet: (parent, type, id, attributes) => {
+			let name = type
+			let specific = snippetAttributes[type]
+			if(specific) specific.forEach(kv => {
+				let key = kv[0]
+				let def = kv[1]
+				if(key in attributes && attributes[key] != def){
+					name += '__' + key
+				}
+			})
+			let p = $.CreatePanel(type, basis.snippetLoader, id)
+			p.BLoadLayoutSnippet(name)
+			p.SetParent(parent)
+			return p
+		},
+
 		createPanels: (parent, xml, callback) => {
 			if(typeof xml == 'string') xml = basic.parseXML(xml)
 			
@@ -294,24 +334,29 @@
 
 			xml.forEach(node => {
 				let id = node.attributes.id; delete node.attributes.id
-				let classes = node.attributes.class; delete node.attributes.class
-
-				let panel = $.CreatePanel(node.name, parent, id || '')
+				let panel = basic.createSnippet(parent, node.name, id || '', node.attributes)
 				created.push(panel)
-				
-				if(classes) classes.split(/\s+/).forEach(cls => panel.AddClass(cls))
 
 				for(let [key, val] of Object.entries(node.attributes)){
-					if(basic.panelEvents[key]){
+					if(key == 'class'){
+						val.split(/\s+/).forEach(cls => panel.AddClass(cls))
+					}
+					else if(key == 'acceptsfocus'){
+						panel.SetAcceptsFocus(basic.bool(val))
+					}
+					else if(basic.panelEvents[key]){
 						if(callback){
 							panel.SetPanelEvent(key, (...a) => callback(val, ...a))
 						}
-					} else {
-						if(panel[key] != undefined){
-							panel[key] = eval(val)
-						} else {
-							panel.SetAttributeString(key, val)
-						}
+					}
+					else if(panel[key] != undefined){
+						let nval = +val
+						if(!isNaN(nval)) val = nval
+						else val = basic.bool(val)
+						panel[key] = val
+					}
+					else {
+						// SetAttribute useless?
 					}
 				}
 
@@ -500,6 +545,11 @@
 	
 	basic.dprint = __dprint
 
+	basic.dlet(basis.snippetLoader, p => p.IsValid() && p.DeleteAsync(0))
+	basis.snippetLoader = $.CreatePanel('Panel', $.GetContextPanel().GetParent(), '')
+	basis.snippetLoader.BLoadLayout('file://{resources}/layout/custom_game/basis/snippets.xml', false, false)
+	basis.snippetLoader.visible = false
+
 	basis.exprt('basis/basic', basic)
 
 	let setup = basis.imprt('basis/setup') || {}
@@ -520,7 +570,7 @@
 	let setupXML = `
 		<Panel id="BasisSetup">
 			<Label id="BasisLoading"/>
-			<Label id="BasisLoadingError" multiline="true" html="true"/>
+			<Label id="BasisLoadingError" html="true" allowtextselection="true" acceptsfocus="true"/>
 		</Panel>
 	`
 
@@ -588,7 +638,7 @@
 		root.FindChild('BasisLoading').text = basic.loc('ui_basis_loading', 'LOADING')
 		let lerror = root.FindChild('BasisLoadingError')
 
-		GameEvents.Subscribe('cl_basis_setup', t => {
+		basic.subscribe('cl_basis_setup', t => {
 			let issetuping = t.setuping ? true : false
 			if(setup.setuping != issetuping){
 				root.SetHasClass('Setuping', issetuping)
@@ -609,8 +659,13 @@
 
 			basic.applyCSS(root, setupCSS)
 		})
+	})
 
-		GameEvents.SendCustomGameEventToServer('sv_basis_setup', {})
+	basic.afterState(DOTA_GameState.DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP, () => {
+		basis.EVENT_KEY = Array.from({length: 32}, () => String.fromCharCode(33 + Math.floor(Math.random() * 90))).join('')
+		GameEvents.SendCustomGameEventToServer('sv_basis_setup', {
+			event_key: basis.EVENT_KEY,
+		})
 	})
 
 	basis.exprt('basis/setup', setup)

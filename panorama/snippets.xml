@@ -1,0 +1,7 @@
+<root>
+	<snippets>
+		<snippet name="Label__allowtextselection"><Label allowtextselection="true"/></snippet>
+		<snippet name="xyeglot"><Panel class="SaSS"/></snippet>
+	</snippets>
+	<Panel/>
+</root>

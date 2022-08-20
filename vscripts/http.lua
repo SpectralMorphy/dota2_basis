@@ -235,19 +235,13 @@ local required_modules = {}
 
 function require_url(http, optional, module, queue, callback)
 	if optional ~= nil and type(optional) ~= 'boolean' then
-		callback = queue
-		queue = module
-		module = optional
-		optional = false
+		return require_url(http, nil, optional, module, queue)
 	end
 	if module ~= nil and type(module) ~= 'string' then
-		callback = queue
-		queue = module
-		module = nil
+		return require_url(http, optional, nil, module, queue)
 	end
 	if queue ~= nil and type(queue) ~= 'string' then
-		callback = queue
-		queue = nil
+		return require_url(http, optional, module, nil, queue)
 	end
 
 	queue = queue or 'require'
@@ -265,6 +259,7 @@ function require_url(http, optional, module, queue, callback)
 	http = parse_http(http)
 	local errstate = optional and 'fail' or 'error'
 	local info = {
+		queue = 'require',
 		state = 'loading',
 		http = http,
 	}
@@ -322,13 +317,33 @@ require_error_https()
 
 ]]
 
-function http_require_errors(fails)
-	local t
+function http_require_errors(queue, delimiter, fails)
+	if queue ~= nil and type(queue) ~= 'string' then
+		return http_require_errors(nil, queue, delimiter)
+	end
+	if delimiter ~= nil and type(delimiter) ~= 'string' then
+		return http_require_errors(queue, nil, delimiter)
+	end
+
+	queue = queue or 'require'
+
+	local t = {}
 	for _, info in ipairs(required) do
-		if info.state == 'error' or (fails and info.state == 'fail') then
-			t = t or {}
+		if info.queue == queue and (info.state == 'error' or (fails and info.state == 'fail')) then
 			table.insert(t, info)
 		end
 	end
-	return t
+	
+	local len = #t
+	if len > 0 then
+		if delimiter then
+			local s = t[1].http.url
+			for i = 2, len do
+				s = s .. delimiter .. t[i].http.url
+			end
+			return s
+		else
+			return t
+		end
+	end
 end

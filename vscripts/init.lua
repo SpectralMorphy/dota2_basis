@@ -5,6 +5,7 @@ end
 
 local http
 local settings = LoadKeyValues('basis.kv')
+local panorama_keys = {}
 
 local basis = {
 	loaded = {},
@@ -117,17 +118,35 @@ if IsServer() then
 				end
 
 				CustomGameEventManager:RegisterListener('sv_basis_setup', function(_, t)
-					local player = PlayerResource:GetPlayer(t.PlayerID)
-					if player then
-						CustomGameEventManager:Send_ServerToPlayer(player, 'cl_basis_setup', {
-							setuping = basis.setuping,
-						})
-					end
+					panorama_keys[t.PlayerID] = t.event_key
+					basis.panorama_event(t.PlayerID, 'cl_basis_setup', {
+						setuping = basis.setuping,
+					})
 				end)
 			end
 		end,
 		nil
 	)	
+end
+
+function basis.panorama_event(pid, event, data)
+	if pid ~= nil and type(pid) ~= 'number' then
+		return basis.panorama_event(nil, pid, event)
+	end
+
+	if pid then
+		local player = PlayerResource:GetPlayer(pid)
+		if player then
+			CustomGameEventManager:Send_ServerToPlayer(player, event, {
+				event_key = panorama_keys[pid],
+				event_data = data,
+			})
+		end
+	else
+		for pid = 0, DOTA_MAX_PLAYERS - 1 do
+			basis.panorama_event(pid, event, data)
+		end
+	end
 end
 
 function basis.setup()
@@ -156,7 +175,7 @@ function basis.endsetup()
 	
 	if GameRules:State_Get() >= DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
 		PauseGame(false)
-		CustomGameEventManager:Send_ServerToAllClients('cl_basis_setup', {
+		basis.panorama_event('cl_basis_setup', {
 			setuping = basis.setuping,
 		})
 	end
@@ -174,7 +193,7 @@ function basis.failsetup(msg)
 	basis.setuping = msg or '<font color="red">game setup failed</font>'
 	
 	if GameRules:State_Get() >= DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
-		CustomGameEventManager:Send_ServerToAllClients('cl_basis_setup', {
+		basis.panorama_event('cl_basis_setup', {
 			setuping = basis.setuping,
 		})
 	end

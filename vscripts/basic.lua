@@ -719,7 +719,7 @@ Convert object to a string, keeping information about its type.
 
 function stringify(v)
 	if isstring(v) then
-		return '"' .. v .. '"'
+		return '"' .. v:gsub('"', '\\"') .. '"'
 	end
 	return tostring(v)
 end
