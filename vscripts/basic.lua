@@ -340,6 +340,34 @@ end
 
 --[[
 
+# dgos(source: any, keys: ...any, default: any): any
+
+Deep get a field of the given table, using consequenceive keys. Set it, if doesn't exist.
+Will override non-table filds on the path.
+
+]]
+
+function dgos(target, key, def, ...)
+	local arg = {...}
+	local val = target[key]
+	local last = (#arg == 0)
+	if last then
+		if val == nil then
+			val = def
+			target[key] = val
+		end
+		return val
+	else
+		if type(val) ~= 'table' then
+			val = {}
+			target[key] = val
+		end
+		return dgos(val, def, unpack(arg))
+	end
+end
+
+--[[
+
 # ocall(function: f() | nil, params: ...any): result: any
 
 Calls the given function if it's not nil with the given params.
