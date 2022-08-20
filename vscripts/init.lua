@@ -14,10 +14,14 @@ local basis = {
 	setuped = false,
 	vscripts_root = settings.vscripts_root or '',
 	vscripts_url = 'https://raw.githubusercontent.com/SpectralMorphy/dota2_basis/main/vscripts/',
+	panorama_url = 'https://raw.githubusercontent.com/SpectralMorphy/dota2_basis/main/panorama/',
 }
 
 local __optional_require = false
 function basis.require(module, target)
+	local optional = __optional_require
+	__optional_require = false
+
 	local mod
 	if basis.loaded[module] then
 		mod = basis.loaded[module]
@@ -39,7 +43,7 @@ function basis.require(module, target)
 		
 		local function onrequire(f, err)
 			if err then
-				if __optional_require then
+				if optional then
 					print(err)
 					return true
 				else
@@ -49,6 +53,7 @@ function basis.require(module, target)
 	
 			local env = {
 				require = basis.require,
+				optional = basis.optional,
 				_M = {},
 			}
 			setmetatable(env, {
@@ -87,7 +92,7 @@ function basis.require(module, target)
 				local url = basis.vscripts_url .. module .. '.lua'
 				http.require_url(
 					url,
-					__optional_require,
+					optional,
 					function(f, err)
 						onrequire(f, err)
 					end
@@ -103,9 +108,7 @@ end
 
 function basis.optional(module, target)
 	__optional_require = true
-	local res = basis.require(module, target)
-	__optional_require = false
-	return res
+	return basis.require(module, target)
 end
 
 if IsServer() then

@@ -1,9 +1,65 @@
 
 --[[
 
-• May be required directly with lua's 'require', but only once!
+• Cannot be required directly with lua's 'require'
 
 ]]
+
+local basis = __basis_loaded
+local setup_callbacks = {}
+local queues = {}
+local required = {}
+local required_modules = {}
+local panorama_modules = {}
+
+if IsServer() then
+	ListenToGameEvent(
+		'game_rules_state_change',
+		function()
+			if GameRules:State_Get() == DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
+				CustomGameEventManager:RegisterListener('sv_basis_panorama_module', function(_, t)
+					local mod = panorama_modules[t.module]
+					if not mod then
+						print('panorama trying to load unknown module: ' .. tostring(t.module))
+						basis.panorama_event(t.PlayerID, 'cl_basis_panorama_module', {
+							module = t.module,
+						})
+						return
+					end
+
+					local function send(pid)
+						basis.panorama_event(pid, 'cl_basis_panorama_module', {
+							module = t.module,
+							code = mod.code,
+						})
+					end
+
+					if mod.code then
+						send(t.PlayerID)
+					else
+						table.insert(mod.clients, t.PlayerID)
+						if not mod.loading then
+							mod.loading = true
+							read_url(http, 'async', function(code)
+								local clients = mod.clients
+								mod.code = code
+								mod.clients = {}
+								for _, pid in ipairs(clients) do
+									send(pid)
+								end
+							end)
+						end
+					end
+				end)
+
+				for _, f in ipairs(setup_callbacks) do
+					f()
+				end
+			end
+		end,
+		nil
+	)	
+end
 
 --[[
 
@@ -57,8 +113,6 @@ end
 
 
 ]]
-
-local queues = {}
 
 function http_queue(queue, callback)
 	if type(queue) == 'function' then
@@ -156,22 +210,6 @@ read_url(httpdata, callback: f(body: string, response: map, parsed: httpdata), f
 
 ]]
 
-local setup_callbacks = {}
-
-if IsServer() then
-	ListenToGameEvent(
-		'game_rules_state_change',
-		function()
-			if GameRules:State_Get() == DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
-				for _, f in ipairs(setup_callbacks) do
-					f()
-				end
-			end
-		end,
-		nil
-	)	
-end
-
 local __read_url__invoke
 function read_url(http, queue, ok, fail, tries)
 	if type(queue) == 'function' then
@@ -229,9 +267,6 @@ end
 require_url(httpdata, optional?: boolean = false, module?: string, callback?: f(module: f(), err: string))
 
 ]]
-
-local required = {}
-local required_modules = {}
 
 function require_url(http, optional, module, queue, callback)
 	if optional ~= nil and type(optional) ~= 'boolean' then
@@ -346,4 +381,19 @@ function http_require_errors(queue, delimiter, fails)
 			return t
 		end
 	end
+end
+
+--[[
+
+panorama_module
+
+]]
+
+function panorama_module(module, http)
+	panorama_modules[module] = {
+		http = http,
+		loading = false,
+		clients = {},
+		code = nil,
+	}
 end

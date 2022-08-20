@@ -2,6 +2,9 @@
 
 (() => {
 	let basis = GameUI.CustomUIConfig().basis
+	let awaiting = []
+	let ready_callbacks = []
+	
 	if(!basis){
 		basis = {
 			modules: {},
@@ -10,12 +13,53 @@
 	}
 
 	basis.imprt = (module) => {
-		return basis.modules[module]
+		if(module in basis.modules){
+			return basis.modules[module]
+		} else {
+			let mod = {}
+			basis.modules[module] = mod
+			awaiting.push(module)
+			basic.afterState(DOTA_GameState.DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP, () => {
+				GameEvents.SendCustomGameEventToServer('sv_basis_panorama_module', {
+					module: module,
+				})
+			})
+			return mod
+		}
 	}
 
 	basis.exprt = (module, t) => {
-		basis.modules[module] = t
+		let mod = basis.modules[module]
+		if(!mod){
+			mod = {}
+			basis.modules[module] = mod
+		}
+		for(let [k, v] of Object.entries(t)){
+			mod[k] = v
+		}
 	}
+
+	basis.ready = (f) => {
+		if(awaiting.length == 0){
+			f()
+		} else {
+			ready_callbacks.push(f)
+		}
+	}
+
+	basis.moduleReady = module => {
+		let i = awaiting.indexOf(module)
+		if(i >= 0) awaiting.splice(i, 1)
+		if(awaiting.length == 0){
+			let onready = ready_callbacks
+			ready_callbacks = []
+			onready.forEach(f => f())
+		}
+	}
+
+// ------------------------------------------
+// basic
+// ------------------------------------------
 
 	let snippetAttributes = ({
 		Label: [
@@ -140,11 +184,11 @@
 		},
 
 		matchSelector: (panel, selector) => {
+			if(!panel || !panel.IsValid()) return false
 			return selector.split(',').some(selector => {
 				let allowParent = false
 				return selector.match(/[#.\w]+/g).reverse().every(temp => {
 					while(true){
-						if(!panel) return false
 						let ok = temp.match(/^[^#.]+|[#.][^#.]+/g).every(basic => {
 							let name = basic.slice(1)
 							switch(basic[0]){
@@ -170,7 +214,7 @@
 		},
 
 		applyCSS: (panel, css, recursive) => {
-			if(!panel) return
+			if(!panel || !panel.IsValid()) return
 
 			if(typeof css == 'string'){
 				css = css.replace(/\/\/.*/g, '')
@@ -552,6 +596,10 @@
 
 	basis.exprt('basis/basic', basic)
 
+// ------------------------------------------
+// setup
+// ------------------------------------------
+
 	let setup = basis.imprt('basis/setup') || {}
 
 	setup.showLoading = () => {
@@ -670,6 +718,10 @@
 
 	basis.exprt('basis/setup', setup)
 
+// ------------------------------------------
+// thinker
+// ------------------------------------------
+
 	function think(){
 		let state = Game.GetState()
 		if(_state != state){
@@ -680,4 +732,21 @@
 		$.Schedule(0, think)
 	}
 	think()
-})()
+})();
+
+// ------------------------------------------
+// url modules loader
+// ------------------------------------------
+
+(() => {
+	let basis = GameUI.CustomUIConfig().basis
+	let {imprt, exprt} = basis
+	
+	imprt('basis/basic').subscribe('cl_basis_panorama_module', t => {
+		const module = t.module
+		if(t.code){
+			eval.call({}, t.code)
+		}
+		basis.moduleReady(module)
+	})
+})();
