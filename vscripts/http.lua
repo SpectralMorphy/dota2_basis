@@ -12,44 +12,54 @@ local required = {}
 local required_modules = {}
 local panorama_modules = {}
 
+local function panorama_module_requested(module, pid)
+	local mod = panorama_modules[module]
+	if not mod then
+		if basis.setuping then
+			basis.onsetup(function()
+				panorama_module_requested(module, pid)
+			end)
+		else
+			print('panorama trying to load unknown module: ' .. tostring(module))
+			basis.panorama_event(pid, 'cl_basis_panorama_module', {
+				module = module,
+			})
+		end
+		return
+	end
+
+	local function send(pid)
+		basis.panorama_event(pid, 'cl_basis_panorama_module', {
+			module = module,
+			code = mod.code,
+		})
+	end
+
+	if mod.code then
+		send(pid)
+	else
+		table.insert(mod.clients, pid)
+		if not mod.loading then
+			mod.loading = true
+			read_url(mod.http, 'async', function(code)
+				local clients = mod.clients
+				mod.code = code
+				mod.clients = {}
+				for _, pid in ipairs(clients) do
+					send(pid)
+				end
+			end)
+		end
+	end
+end
+
 if IsServer() then
 	ListenToGameEvent(
 		'game_rules_state_change',
 		function()
 			if GameRules:State_Get() == DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
 				CustomGameEventManager:RegisterListener('sv_basis_panorama_module', function(_, t)
-					local mod = panorama_modules[t.module]
-					if not mod then
-						print('panorama trying to load unknown module: ' .. tostring(t.module))
-						basis.panorama_event(t.PlayerID, 'cl_basis_panorama_module', {
-							module = t.module,
-						})
-						return
-					end
-
-					local function send(pid)
-						basis.panorama_event(pid, 'cl_basis_panorama_module', {
-							module = t.module,
-							code = mod.code,
-						})
-					end
-
-					if mod.code then
-						send(t.PlayerID)
-					else
-						table.insert(mod.clients, t.PlayerID)
-						if not mod.loading then
-							mod.loading = true
-							read_url(http, 'async', function(code)
-								local clients = mod.clients
-								mod.code = code
-								mod.clients = {}
-								for _, pid in ipairs(clients) do
-									send(pid)
-								end
-							end)
-						end
-					end
+					panorama_module_requested(t.module, t.PlayerID)
 				end)
 
 				for _, f in ipairs(setup_callbacks) do

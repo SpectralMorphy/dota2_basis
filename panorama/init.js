@@ -12,10 +12,15 @@
 		GameUI.CustomUIConfig().basis = basis
 	}
 
-	basis.imprt = (module) => {
+	basis.imprt = (module, local) => {
 		if(module in basis.modules){
-			return basis.modules[module]
-		} else {
+			let mod = basis.modules[module]
+			if(!mod.__imported){
+				mod.__imported = true
+				basic.ocall(mod.imprt)
+			}
+			return mod
+		} else if(!local) {
 			let mod = {}
 			basis.modules[module] = mod
 			awaiting.push(module)
@@ -100,6 +105,10 @@
 			if(v != undefined){
 				f(v)
 			}
+		},
+
+		ocall: (f, ...args) => {
+			if(f) f(...args)
 		},
 
 		bool: x => x == 'true' ? true : x == 'false' ? false : x,
@@ -204,6 +213,7 @@
 						else {
 							if(allowParent){
 								panel = panel.GetParent()
+								if(!panel) return false
 							} else {
 								return false
 							}
@@ -589,6 +599,20 @@
 	
 	basic.dprint = __dprint
 
+	basic.subscribe('cl_basis_panorama_module', t => {
+		const module = t.module
+		if(t.code){
+			eval.call({}, t.code)
+		}
+		basis.moduleReady(module)
+	})
+
+	basic.subscribe('cl_basis_panorama_imprt', t => {
+		for(let [k, module] of Object.entries(t.imprts)){
+			basis.imprt(module)
+		}
+	})
+
 	basic.dlet(basis.snippetLoader, p => p.IsValid() && p.DeleteAsync(0))
 	basis.snippetLoader = $.CreatePanel('Panel', $.GetContextPanel().GetParent(), '')
 	basis.snippetLoader.BLoadLayout('file://{resources}/layout/custom_game/basis/snippets.xml', false, false)
@@ -600,7 +624,7 @@
 // setup
 // ------------------------------------------
 
-	let setup = basis.imprt('basis/setup') || {}
+	let setup = basis.imprt('basis/setup', true) || {}
 
 	setup.showLoading = () => {
 		if(Game.GameStateIsBefore(DOTA_GameState.DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP)){
@@ -732,21 +756,4 @@
 		$.Schedule(0, think)
 	}
 	think()
-})();
-
-// ------------------------------------------
-// url modules loader
-// ------------------------------------------
-
-(() => {
-	let basis = GameUI.CustomUIConfig().basis
-	let {imprt, exprt} = basis
-	
-	imprt('basis/basic').subscribe('cl_basis_panorama_module', t => {
-		const module = t.module
-		if(t.code){
-			eval.call({}, t.code)
-		}
-		basis.moduleReady(module)
-	})
 })();

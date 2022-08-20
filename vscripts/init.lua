@@ -6,6 +6,7 @@ end
 local http
 local settings = LoadKeyValues('basis.kv')
 local panorama_keys = {}
+local setup_callbacks = {}
 
 local basis = {
 	loaded = {},
@@ -15,7 +16,9 @@ local basis = {
 	vscripts_root = settings.vscripts_root or '',
 	vscripts_url = 'https://raw.githubusercontent.com/SpectralMorphy/dota2_basis/main/vscripts/',
 	panorama_url = 'https://raw.githubusercontent.com/SpectralMorphy/dota2_basis/main/panorama/',
+	panorama_imprts = {},
 }
+__basis_loaded = basis
 
 local __optional_require = false
 function basis.require(module, target)
@@ -125,6 +128,9 @@ if IsServer() then
 					basis.panorama_event(t.PlayerID, 'cl_basis_setup', {
 						setuping = basis.setuping,
 					})
+					basis.panorama_event(t.PlayerID, 'cl_basis_panorama_imprt', {
+						imprts = basis.panorama_imprts,
+					})
 				end)
 			end
 		end,
@@ -152,6 +158,13 @@ function basis.panorama_event(pid, event, data)
 	end
 end
 
+function basis.panorama_imprt(module)
+	table.insert(basis.panorama_imprts, module)
+	basis.panorama_event('cl_basis_panorama_imprt', {
+		imprts = {module},
+	})
+end
+
 function basis.setup()
 	if IsClient() then
 		return
@@ -176,6 +189,10 @@ function basis.endsetup()
 	basis.setuping = false
 	basis.setuped = true
 	
+	for _, f in ipairs(setup_callbacks) do
+		f()
+	end
+
 	if GameRules:State_Get() >= DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
 		PauseGame(false)
 		basis.panorama_event('cl_basis_setup', {
@@ -195,6 +212,10 @@ function basis.failsetup(msg)
 
 	basis.setuping = msg or '<font color="red">game setup failed</font>'
 	
+	for _, f in ipairs(setup_callbacks) do
+		f(basis.setuping)
+	end
+
 	if GameRules:State_Get() >= DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
 		basis.panorama_event('cl_basis_setup', {
 			setuping = basis.setuping,
@@ -202,7 +223,10 @@ function basis.failsetup(msg)
 	end
 end
 
+function basis.onsetup(f)
+	table.insert(setup_callbacks, f)
+end
+
 http = basis.optional('http')
 
-__basis_loaded = basis
 return basis
