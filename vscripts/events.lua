@@ -1,4 +1,4 @@
-local _M = _M or _G
+
 
 local listener = class({
 	constructor = function(self, t)
@@ -25,5 +25,3 @@ end
 function getcalled()
 
 end
-
-return _M

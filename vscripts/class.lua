@@ -9,7 +9,6 @@
 
 ]]
 
-local _M = _M or _G
 local basic = require('basic')
 
 --[[
@@ -46,7 +45,3 @@ extend_class(): class
 function extend_class(basetable, inits, statics)
 	
 end
-
------------------------------------------------------
-
-return _M

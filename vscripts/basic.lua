@@ -2,11 +2,7 @@
 
 • Both client and server
 
-• May be required directly with lua's 'require'
-
 ]]
-
-local _M = _M or _G
 
 --[[
 
@@ -404,18 +400,28 @@ end
 
 --[[
 
-# oscall(object: table | nil, function: string, params: ...any)
+# dcall(object: table | nil, function: string, params: ...any)
 
 Optionally calls function of the given object by name, using object itself as first parameter.
 Calls only if both object and function are not nils.
 
 ]]
 
-function oscall(obj, fname, ...)
+function dcall(obj, path, args)
+	if not isarray(path) then
+		path = {path}
+	end
+	if not isarray(args) then
+		args = {args}
+	end
+
+	local fname = table.remove(path, #path)
+	local obj = dget(obj, unpack(path))
+	
 	if obj then
 		local f = obj[fname]
 		if f then
-			return f(obj, ...)
+			return f(obj, unpackfull(args))
 		end
 	end
 end
@@ -920,6 +926,21 @@ function getkey(source, value, iterator)
 	return findkey(source, function(v)
 		return v == value
 	end, iterator)
+end
+
+--[[
+
+# remove(array, value: any)
+
+Remove value from array.
+
+]]
+
+function remove(array, value)
+	local key = getkey(array, value)
+	if isnumber(key) then
+		return table.remove(array, key)
+	end
 end
 
 --[[
@@ -1651,7 +1672,3 @@ setmetatable(dprint, {
 		__dprint(object, options)
 	end,
 })
-
------------------------------------------------------
-
-return _M

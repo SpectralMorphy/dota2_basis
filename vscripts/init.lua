@@ -75,6 +75,7 @@ function basis.require(module, target)
 	
 			for k, v in pairs(_M) do
 				mod[k] = v
+				setmetatable(mod, getmetatable(_M))
 			end
 	
 			clone_to_target()
@@ -131,6 +132,10 @@ if IsServer() then
 					basis.panorama_event(t.PlayerID, 'cl_basis_panorama_imprt', {
 						imprts = basis.panorama_imprts,
 					})
+				end)
+
+				CustomGameEventManager:RegisterListener('sv_basis_panorama_module_ready', function(_, t)
+					
 				end)
 			end
 		end,

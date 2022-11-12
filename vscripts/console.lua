@@ -2,7 +2,6 @@ if IsClient() then
 	return
 end
 
-local basis = __basis_loaded
 local http = optional('http')
 
 if http then
