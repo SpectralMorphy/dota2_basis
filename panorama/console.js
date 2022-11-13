@@ -106,6 +106,8 @@ exprt('basis/console', {
 
 	_init() {
 
+		$.Msg("AMA INIT")
+
 		// create panel
 
 		let parent = $.GetContextPanel().GetParent()
