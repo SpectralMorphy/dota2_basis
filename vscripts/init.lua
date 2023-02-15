@@ -1,237 +1,136 @@
-if __basis_loaded then
-	__basis_loaded.reload = true
-	return __basis_loaded
-end
+local basis = {
+	path = 'basis',
+	origin = '',
+	loaded = {},
+}
 
 local http
-local settings = LoadKeyValues('basis.kv')
-local panorama_keys = {}
-local setup_callbacks = {}
 
-local basis = {
-	loaded = {},
-	reload = false,
-	setuping = false,
-	setuped = false,
-	vscripts_root = settings.vscripts_root or '',
-	vscripts_url = 'https://raw.githubusercontent.com/SpectralMorphy/dota2_basis/main/vscripts/',
-	panorama_url = 'https://raw.githubusercontent.com/SpectralMorphy/dota2_basis/main/panorama/',
-	panorama_imprts = {},
-}
-__basis_loaded = basis
+--[[
 
-local __optional_require = false
-function basis.require(module, target)
-	local optional = __optional_require
-	__optional_require = false
 
-	local mod
-	if basis.loaded[module] then
-		mod = basis.loaded[module]
+]]
+
+function basis.getpath(module)
+	if type(module) == 'string' then
+		return basis.path .. '/' .. module
+	elseif module == nil then
+		return basis.path
+	else
+		error('basis.getpath arg #1: expected string or nil, got ' .. tostring(module))
+	end
+end
+
+--[[
+
+]]
+
+function basis.setpath(path)
+	if type(path) ~= 'string' then
+		error('basis.setpath arg #1: expected string, got ' .. tostring(path), 2)
+	end
+	
+	-- remove ending slashes from passed path
+	path = path:gsub('[\\/]+$', '')
+
+	-- clear old path loader
+	package.preload[ basis.getpath('init') ] = nil
+
+	-- set new path
+	basis.path = path
+
+	-- set new path loader
+	package.preload[ basis.getpath('init') ] = function()
+		return basis
 	end
 
-	local function clone_to_target()
+	-- reload http module
+	http = nil
+	pcall(function()
+		http = basis.require('http')
+	end)
+end
+
+--[[
+
+]]
+
+function basis.setorigin(url)
+	if type(url) ~= 'string' then
+		error('basis.setorigin arg #1: expected string, got ' .. tostring(url), 2)
+	end
+	
+
+end
+
+--[[
+
+]]
+
+function basis.require(module, target)
+	if type(module) ~= 'string' then
+		error('basis.require arg #1 (module): expected string, got ' .. tostring(target), 2)
+	end
+	if target ~= nil and type(target) ~= 'table' then
+		error('basis.require arg #2 (target): expected table or nil, got ' .. tostring(target), 2)
+	end
+
+	local function clone(lib, target)
 		if target then
-			for k, v in pairs(mod) do
+			for k, v in pairs(lib) do
 				target[k] = v
 			end
 		end
 	end
 
-	if mod then
-		clone_to_target()
+	local loaded = basis.loaded[module]
+	if loaded then
+		clone(loaded, target)
+		return loaded
 	else
-		mod = {}
-		basis.loaded[module] = mod
+		loaded = {}
+		basis.loaded[module] = loaded
+	end
+
+	local function perform(fcode)
+		local env = {
+			basis = basis,
+			_M = loaded,
+		}
+		setmetatable(env, {
+			__index = _G,
+		})
+		setfenv(fcode, env)
+
+		local lib = fcode()
+
+		clone(lib, target)
 		
-		local function onrequire(f, err)
-			if err then
-				if optional then
-					print(err)
-					return true
-				else
-					error(err)
-				end
-			end
+		return lib
+	end
 	
-			local env = {
-				require = basis.require,
-				optional = basis.optional,
-				_M = {},
-			}
-			setmetatable(env, {
-				__index = function(s, k)
-					return rawget(env._M, k) or _G[k]
-				end,
-				__newindex = env._M,
-			})
-			
-			setfenv(f, env)
-			local _M = f()
-	
-			if _M == nil then
-				_M = env._M
-			end
-	
-			for k, v in pairs(_M) do
-				mod[k] = v
-				setmetatable(mod, getmetatable(_M))
-			end
-	
-			clone_to_target()
-		end
+	local fcode
+	local status, err = pcall(function()
+		fcode = loadfile(basis.getpath(module))
+	end)
 
-		local path = module
-		if basis.vscripts_root ~= '' then
-			path = basis.vscripts_root .. '/' .. path
-		end
+	if http then
+		if status then
 
-		local f, err = loadfile(path)
-		if http then
-			if not err then
-				http.http_queue('require', function()
-					onrequire(f, err)
-				end)()
-			else
-				local url = basis.vscripts_url .. module .. '.lua'
-				http.require_url(
-					url,
-					optional,
-					function(f, err)
-						onrequire(f, err)
-					end
-				)
-			end
 		else
-			onrequire(f, err)
-		end
-	end
 
-	return mod
-end
-
-function basis.optional(module, target)
-	__optional_require = true
-	return basis.require(module, target)
-end
-
-if IsServer() then
-	ListenToGameEvent(
-		'game_rules_state_change',
-		function()
-			if GameRules:State_Get() == DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
-				if basis.setuping then
-					PauseGame(true)
-				end
-
-				CustomGameEventManager:RegisterListener('sv_basis_setup', function(_, t)
-					panorama_keys[t.PlayerID] = t.event_key
-					basis.panorama_event(t.PlayerID, 'cl_basis_setup', {
-						setuping = basis.setuping,
-					})
-					basis.panorama_event(t.PlayerID, 'cl_basis_panorama_imprt', {
-						imprts = basis.panorama_imprts,
-					})
-				end)
-
-				CustomGameEventManager:RegisterListener('sv_basis_panorama_module_ready', function(_, t)
-					
-				end)
-			end
-		end,
-		nil
-	)	
-end
-
-function basis.panorama_event(pid, event, data)
-	if pid ~= nil and type(pid) ~= 'number' then
-		return basis.panorama_event(nil, pid, event)
-	end
-
-	if pid then
-		local player = PlayerResource:GetPlayer(pid)
-		if player then
-			CustomGameEventManager:Send_ServerToPlayer(player, event, {
-				event_key = panorama_keys[pid],
-				event_data = data,
-			})
 		end
 	else
-		for pid = 0, DOTA_MAX_PLAYERS - 1 do
-			basis.panorama_event(pid, event, data)
+		if status then
+			return perform(fcode)
+		else
+			error(err, 2)
 		end
 	end
 end
 
-function basis.panorama_imprt(module)
-	table.insert(basis.panorama_imprts, module)
-	basis.panorama_event('cl_basis_panorama_imprt', {
-		imprts = {module},
-	})
-end
+-----------------------------------------------------------
 
-function basis.setup()
-	if IsClient() then
-		return
-	end
-
-	if basis.setuping or basis.setuped then
-		return
-	end
-
-	basis.setuping = true
-end
-
-function basis.endsetup()
-	if IsClient() then
-		return
-	end
-
-	if not basis.setuping or basis.setuped then
-		return
-	end
-
-	basis.setuping = false
-	basis.setuped = true
-	
-	for _, f in ipairs(setup_callbacks) do
-		f()
-	end
-
-	if GameRules:State_Get() >= DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
-		PauseGame(false)
-		basis.panorama_event('cl_basis_setup', {
-			setuping = basis.setuping,
-		})
-	end
-end
-
-function basis.failsetup(msg)
-	if IsClient() then
-		return
-	end
-	
-	if not basis.setuping or basis.setuped then
-		return
-	end
-
-	basis.setuping = msg or '<font color="red">game setup failed</font>'
-	
-	for _, f in ipairs(setup_callbacks) do
-		f(basis.setuping)
-	end
-
-	if GameRules:State_Get() >= DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP then
-		basis.panorama_event('cl_basis_setup', {
-			setuping = basis.setuping,
-		})
-	end
-end
-
-function basis.onsetup(f)
-	table.insert(setup_callbacks, f)
-end
-
-http = basis.optional('http')
+basis.setpath(basis.path)
 
 return basis
