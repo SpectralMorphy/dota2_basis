@@ -389,6 +389,35 @@ genetypechecker = false
 
 --[[
 
+# enpack(first, ...args): rightargs, ...leftargs
+
+Packs arguments to array, starting from the specified index.
+Args to the left are returned after the array. 
+
+<-@ first: int				--
+<-@ args: any				--
+->@ rightargs: {...any}		--
+->@ leftargs: any			--
+
+]]
+
+function basic.enpack(first, ...)
+	basic.validate(first, 'int', 'first')
+	local args = {...}
+	local max = basic.max(basic.keys(args))
+	local left, right = {}, {}
+	for i = 1, max do
+		if i < first then
+			left[i] = args[i]
+		else
+			right[i+1-first] = args[i]
+		end
+	end
+	return right, basic.unpack(left)
+end
+
+--[[
+
 # use(...any)
 
 Define upvalues for usage. Affects some context dependent functions.
@@ -1039,7 +1068,7 @@ function basic.wrap(func, inform, outform)
 		if inform then
 
 		else
-			input = arg
+			input = {...}
 		end
 
 		local output = {func(basic.unpack(input))}
@@ -2334,7 +2363,7 @@ function basic.ipack(iterate)
 
 	return function(object)
 		local iter, obj, args = (function(iter, obj, ...)
-			return iter, obj, arg
+			return iter, obj, {...}
 		end)(iterate(object));
 
 		return function(obj, packed)
@@ -2807,7 +2836,3 @@ function basic.values(object, iterate)
 	basic.validate( iterate, 'function nil', '2')
 	return basic.array(object, iterate or basic.xpairs, 2)
 end
-
------------------------------------------------------
-
-return basic
